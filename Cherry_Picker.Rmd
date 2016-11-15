@@ -25,21 +25,14 @@ Generate some test data (Full source plate).
 ```{r}
 set.seed(161115)
 
-template <- data.table(source_rack = rep(paste0("HTIF000", 1:4), each = 96),
-                    source_pos = rep(1:96, 4),
-                    source_col = rep(1:12, each = 8),
-                    source_row = rep(1:8, 12),
-                    dest_rack = rep(paste0("HTIF000", 5:8), each = 96),
-                    dest_pos = rep(1:96, 4),
-                    dest_col = rep(1:12, each = 8),
-                    dest_row = rep(1:8, 12))
+n_source <- 20
 
-input <- data.table(source_rack = rep(paste0("HTIF000", 1:4), each = 96),
-                    source_id =  paste0("ID_", sample(1:1000, 384)),
-                    source_pos = rep(1:96, 4),
+input <- data.table(source_rack = rep(paste0("HTIF000", 1:n_source), each = 96),
+                    source_id =  paste0("ID_", sample(1:10000, 96*n_source)),
+                    source_pos = rep(1:96, n_source),
                     source_col = rep(1:12, each = 8),
                     source_row = rep(1:8, 12),
-                    source_flag = sample(c("Hit", "Miss"), 384, replace = TRUE, prob = c(0.35, 0.65)))
+                    source_flag = sample(c("Hit", "Miss"), 96*n_source, replace = TRUE, prob = c(0.35, 0.65)))
 ```
 
 Randomize empty wells in the Source plates (`Miss`)
@@ -52,34 +45,41 @@ Plot the Source plates layout
 input_plot <- ggplot(input, aes(x = source_col, y = source_row, label = source_id))
 input_plot + geom_text(size = 1.5) +
             facet_wrap( ~ source_rack) +
-            scale_x_continuous(breaks = 1:12) +
-            ylim(LETTERS[8:1]) +
+            scale_x_continuous(lim = c(1, 12), breaks = 1:12) +
+            scale_y_reverse(lim = c(8, 1), breaks = 1:8, labels = LETTERS[1:8]) +
             ggtitle("Source Plates Layout")
 ```
 
-Filter out empty wells
+Filter out empty wells to generate 
 ```{r}
-input_fil <- input[source_flag == "Hit",]
+output <- input[source_flag == "Hit",]
 ```
 
-Assign the destination positions
+Assign the destination positions. Only the internal 60 wells (Excluding rows A/H and columns 1/12) are used. 
 ```{r}
-input_fil[, `:=`(dest_rack = rep(paste0("HTIF000", 5:8), each = 96),
-                 dest_pos = 1:96,
-                 dest_col = rep(1:12, each = 8),
-                 dest_row = rep(1:8, 12))]
+output[, `:=`(dest_rack = rep(paste0("HTIF000", (n_source+1):(n_source*4)), each = 60),
+                 dest_pos = as.vector(outer((10:15), seq(0, 72, 8), FUN = "+")),
+                 dest_col = rep(2:11, each = 6),
+                 dest_row = rep(2:7, 10))]
 ```
 
 Plot the Source plates layout
 ```{r}
-output_plot <- ggplot(input_fil, aes(x = dest_col, y = dest_row, label = source_id))
+output_plot <- ggplot(output, aes(x = dest_col, y = dest_row, label = source_id))
 output_plot + geom_text(size = 1.5) +
             facet_wrap( ~ dest_rack) +
-            scale_x_continuous(breaks = 1:12) +
-            ylim(LETTERS[8:1]) +
+            scale_x_continuous(lim = c(1, 12), breaks = 1:12) +
+            scale_y_reverse(lim = c(8, 1), breaks = 1:8, labels = LETTERS[1:8]) +
             ggtitle("Dest Plates Layout")
 ```
 
+```{r}
+write.csv(x = output, 
+          file = "output/Cherry_Pick_Worklist.csv", 
+          quote = FALSE, 
+          col.names = TRUE,
+          row.names = FALSE)
+```
 Document the information about the analysis session
 ```{r sessionInfo, include=TRUE, echo=TRUE, results='markup'}
 sessionInfo()
