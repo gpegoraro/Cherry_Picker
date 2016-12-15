@@ -1,10 +1,12 @@
 ---
 title: "Cherry_Picker"
 author: "Gianluca Pegoraro"
-date: "November 15, 2016"
+date: "December, 15 2016"
 output: html_document
 ---
 ## Aim
+
+This script uses as input a .csv file containing the number and positions of "Positive" wells to be picked from an arbitrary number of 96-well source plates. This table is then rearranged to produce a .csv file containing the well positions for a matched number of 96-well destination plates. The script allows for 2 output formats: `default`- which included the whole 96-wells on the destination plates -, or `internal` - which excludes all the edge wells on the plates. This behavior can be controlled by the `format` flag to be specified at the beginning of the script run. 
 
 ```{r loadAndClean}
 library(plyr)
