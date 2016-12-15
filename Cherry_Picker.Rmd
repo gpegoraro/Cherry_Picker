@@ -21,6 +21,11 @@ opts_chunk$set(fig.path="output/", cache = TRUE, dev=c("png"), message=FALSE, wa
 theme_set(theme_minimal())
 ```
 
+Set the import flag. The Flag variable can only take the `default` or `internal` values. 
+```{r flag}
+flag <- "default"
+```
+
 ## Import Data
 
 Generate some test data (Full source plate). 
