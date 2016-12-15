@@ -17,35 +17,77 @@ library(knitr)
 ```
 
 ```{r, include=FALSE, warning=FALSE}
-opts_chunk$set(fig.path="output/", cache = TRUE, dev=c("png"), message=FALSE, warning=FALSE)
-theme_set(theme_minimal())
+opts_chunk$set(
+    fig.path = "output/",
+    cache = TRUE,
+    dev = c("png"),
+    message = FALSE,
+    warning = FALSE
+    )
+    theme_set(theme_minimal())
 ```
 
-Set the import flag. The Flag variable can only take the `default` or `internal` values. 
-```{r flag}
+Set the import flag. The Flag variable can only take the `default` or `internal` values. Also, set the desired number of source plates for the template file.
+```{r inputs}
 flag <- "default"
+
+n_source <- 20
 ```
 
-## Import Data
+## Generate a template input file
 
-Generate some test data (Full source plate). 
+Generate some template data (Full source plate).
 ```{r}
 set.seed(161115)
 
-n_source <- 20
-
-input <- data.table(source_rack = rep(paste0("HTIF000", 1:n_source), each = 96),
-                    source_id =  paste0("ID_", sample(1:10000, 96*n_source)),
-                    source_pos = rep(1:96, n_source),
-                    source_col = rep(1:12, each = 8),
-                    source_row = rep(1:8, 12),
-                    source_flag = sample(c("Hit", "Miss"), 96*n_source, replace = TRUE, prob = c(0.35, 0.65)))
+input_template <-
+    data.table(
+    source_rack = rep(paste0("HTIF000", 1:n_source), each = 96),
+    source_id =  paste0("ID_", sample(1:10000, 96 * n_source)),
+    source_pos = rep(1:96, n_source),
+    source_col = rep(1:12, each = 8),
+    source_row = rep(1:8, 12),
+    source_well = paste0(rep(LETTERS[1:8], 12), rep(1:12, each = 8)),
+    source_flag = sample(
+    c("Hit", "Miss"),
+    96 * n_source,
+    replace = TRUE,
+    prob = c(0.35, 0.65)
+    )
+    )
 ```
 
 Randomize empty wells in the Source plates (`Miss`)
 ```{r}
-input[source_flag == "Miss", source_id := NA]
+input_template[source_flag == "Miss", source_id := NA]
 ```
+
+Write the template table to a .csv file.
+```{r}
+write.csv(input_template,
+          "Input_template.csv",
+          row.names = FALSE,
+          quote = FALSE)
+```
+
+The `Input_template.csv` can be hand modified in excel. Edit the content of single cells as needed, but **Do not modify the number or name of the variables (Columns) in the file**. These are the variables (Columns) in the file that should be present:
+
+* `source_rack`: The barcode (name) of the source plate | Required 
+* `source_id`: An identifier for a the source well | Optional
+* `source_pos`: A numerical identifier for the well position | Required (**Do not edit**)
+* `source_col`: A numerical identifier for the well column | Required (**Do not edit**)
+* `source_row`: A numerical identifier for the well row | Required (**Do not edit**)
+* `source_well`: A string name for the well position | Required (**Do not edit**)
+* `source_flag`: A flag indicating whether the well should be transferred or not| Required (**Can assume only the `Hit` or `Miss` values)
+
+Once the contents of the files are edited according to your needs, save the file in .csv format with the same name.
+
+## Read and process the modified input file
+
+```{r}
+input <- fread("Input_template.csv")
+```
+
 
 Plot the Source plates layout
 ```{r}
