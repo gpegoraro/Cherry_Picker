@@ -29,7 +29,7 @@ opts_chunk$set(
 
 Set the import flag. The Flag variable can only take the `default` or `internal` values. Also, set the desired number of source plates for the template file.
 ```{r inputs}
-flag <- "default"
+flag <- "internal"
 
 n_source <- 20
 ```
@@ -42,12 +42,11 @@ set.seed(161115)
 
 input_template <-
     data.table(
-    source_rack = rep(paste0("HTIF000", 1:n_source), each = 96),
+    source_rack = rep(paste0("Input_Rack_", 1:n_source), each = 96),
     source_id =  paste0("ID_", sample(1:10000, 96 * n_source)),
     source_pos = rep(1:96, n_source),
     source_col = rep(1:12, each = 8),
     source_row = rep(1:8, 12),
-    source_well = paste0(rep(LETTERS[1:8], 12), rep(1:12, each = 8)),
     source_flag = sample(
     c("Hit", "Miss"),
     96 * n_source,
@@ -55,6 +54,8 @@ input_template <-
     prob = c(0.35, 0.65)
     )
     )
+
+input_template[, `:=`(source_well = paste0(LETTERS[source_row], source_col))]
 ```
 
 Randomize empty wells in the Source plates (`Miss`)
@@ -83,14 +84,13 @@ The `Input_template.csv` can be hand modified in excel. Edit the content of sing
 Once the contents of the files are edited according to your needs, save the file in .csv format with the same name.
 
 ## Read and process the modified input file
-
+Read the .csv input file. 
 ```{r}
 input <- fread("Input_template.csv")
 ```
 
-
 Plot the Source plates layout
-```{r}
+```{r, fig.height=12, fig.width= 18}
 input_plot <- ggplot(input, aes(x = source_col, y = source_row, label = source_id))
 input_plot + geom_text(size = 1.5) +
             facet_wrap( ~ source_rack) +
@@ -99,17 +99,34 @@ input_plot + geom_text(size = 1.5) +
             ggtitle("Source Plates Layout")
 ```
 
-Filter out empty wells to generate 
+Filter out empty wells to generate the output table. Also count how many source plates are actually present. 
 ```{r}
 output <- input[source_flag == "Hit",]
+
+n_source <- length(output[,unique(source_rack)])
 ```
 
 Assign the destination positions. Only the internal 60 wells (Excluding rows A/H and columns 1/12) are used. 
 ```{r}
-output[, `:=`(dest_rack = rep(paste0("HTIF000", (n_source+1):(n_source*4)), each = 60),
+try(if(!(flag %in% c("default", "internal"))) stop("Invalid format flag, set it either to 'default' or 'internal'", call. = FALSE))
+
+if(flag == "default"){
+    output[, `:=`(dest_rack = rep(paste0("Output_Rack_", 1:n_source), each = 96),
+                 dest_pos = 1:96,
+                 dest_col = rep(1:12, each = 8),
+                 dest_row = rep(1:8, 12))]
+    
+    output[, `:=`(dest_well = paste0(LETTERS[dest_row], dest_col))]
+} 
+
+if(flag == "internal") {
+    output[, `:=`(dest_rack = rep(paste0("Output_Rack_", 1:(n_source*10)), each = 60),
                  dest_pos = as.vector(outer((10:15), seq(0, 72, 8), FUN = "+")),
                  dest_col = rep(2:11, each = 6),
                  dest_row = rep(2:7, 10))]
+    
+    output[, `:=`(dest_well = paste0(LETTERS[dest_row], dest_col))]
+}
 ```
 
 Plot the Source plates layout
