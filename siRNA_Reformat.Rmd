@@ -1,12 +1,12 @@
 ---
 title: "RNAi Library reformat for secodnary screen"
 author: "Gianluca Pegoraro"
-date: "March, 06 2016"
+date: "March, 08 2016"
 output: html_document
 ---
 ## Aim
 
-This script uses as input a .csv file containing the number and positions of "Positive" wells to be picked from an arbitrary number of 96-well source plates. This table is then rearranged to produce a .csv file containing the well positions for a matched number of 96-well destination plates. The script allows for 2 output formats: `default`- which included the whole 96-wells on the destination plates -, or `internal` - which excludes all the edge wells on the plates. This behavior can be controlled by the `format` flag to be specified at the beginning of the script run. 
+To reformat siRNA validation libraries for Andria and Pedja. The validation library was ordered from Qiagen and it arrived spread over 6 96-well plates. The siRNA's belong either to Andria or Pedja. The goal is to cheery pick user-specific siRNA from the 96-well source plates and reformat them in 1 384 destination plate per user. 
 
 ```{r loadAndClean}
 library(plyr)
@@ -14,12 +14,13 @@ library(ggplot2)
 library(data.table)
 library(stringr)
 library(knitr)
+library(ggthemes)
 ```
 
 ```{r, include=FALSE, warning=FALSE}
 opts_chunk$set(
     fig.path = "output/",
-    cache = TRUE,
+    cache = FALSE,
     dev = c("png"),
     message = FALSE,
     warning = FALSE
@@ -76,12 +77,12 @@ dt.list <- llply(path.list, read.merge)
 Separate the well level data.
 
 ```{r deleteDtList, results='asis'}
-dt.qiagen <- dt.list$w
+dt_qiagen <- dt.list$w
 
 rm(dt.list)
 ```
 
-The `dt.qiagen` data.table variables need to be renamed to:
+The `dt_qiagen` data.table variables need to be renamed to:
 
 * `source_rack`: The barcode (name) of the source plate | Required 
 * `source_name`: A name for the source plate | Optional
@@ -90,15 +91,19 @@ The `dt.qiagen` data.table variables need to be renamed to:
 * `source_row`: A numerical identifier for the well row | Required (**Do not edit**)
 * `source_col`: A numerical identifier for the well column | Required (**Do not edit**)
 * `entrez_id`: A numerical identifier for the targeted gene | Optional (**Do not edit**)
+* `gene_symbol`: A character identifier for the targeted gene | Optional (**Do not edit**)
+* `gene_description`: A character identifier for the targeted gene | Optional (**Do not edit**)
 * `user`: A flag indicating whether the well should be transferred or not| Required (**Can assume only the `Andria` or `Pedja` values)
 
 ```{r}
-setnames(dt.qiagen, c("Plate Id", 
+setnames(dt_qiagen, c("Plate Id", 
                       "Plate Name", 
                       "Plate Description", 
                       "Row", 
                       "Col", 
-                      "Entrez Gene Id", 
+                      "Entrez Gene Id",
+                      "NCBI gene symbol",
+                      "Gene Description",
                       "TAG"),
                      c("source_rack",
                        "source_name",
@@ -106,6 +111,8 @@ setnames(dt.qiagen, c("Plate Id",
                        "source_row",
                        "source_col",
                        "entrez_id",
+                       "gene_symbol",
+                       "gene_description",
                        "user"))
 ```
 
@@ -115,87 +122,106 @@ We need to add these columns:
 * `source_well`: A string name for the well position | Required (**Do not edit**)
 
 ```{r}
-dt.qiagen <- dt.qiagen[order(source_rack, source_col, source_row)]
+dt_qiagen <- dt_qiagen[order(source_rack, source_col, source_row)]
 
-dt.qiagen[, source_well := paste0(source_row, source_col)]
+dt_qiagen[,  `:=` (source_well = paste0(source_row, source_col),
+                   gene_description = str_replace_all(gene_description, ", ", "_"))]
 
-dt.qiagen[, source_row := NULL]
+dt_qiagen[, `:=`(source_row =  NULL,
+                 source_col = NULL)]
 ```
 
-## Generate a key to translate well name to numerical well position.
+Generate a key to translate well name to numerical well position.
 
 ```{r}
 pos_key <-
     data.table(source_pos = 1:96,
                source_col = rep(1:12, each = 8),
-               source_row = rep(LETTERS[1:8], 12)
+               source_row = rep(1:8, 12),
+               source_row2 = rep(LETTERS[1:8], 12)
     )
 
-pos_key[, source_well := paste0(source_row, source_col)]
+pos_key[, source_well := paste0(source_row2, source_col)]
 ```
 
 Merge Key table with numerical positions to 
 ```{r}
 setkey(pos_key, source_well)
-setkey(dt.qiagen, source_well)
+setkey(dt_qiagen, source_well)
 
-dt.source <- dt.qiagen[pos_key, nomatch = 0][order(source_rack, source_pos)]
+dt_source <- dt_qiagen[pos_key, nomatch = 0][order(source_rack, source_pos)]
 ```
-
 
 Plot the Source plates layout
 ```{r, fig.height=12, fig.width= 18}
-input_plot <- ggplot(dt.qiagen, aes(x = source_col, y = source_row, label = user))
+input_plot <- ggplot(dt_source, aes(x = source_col, y = source_row, label = gene_symbol, color = user))
 input_plot + geom_text(size = 1.5) +
             facet_wrap( ~ source_rack) +
             scale_x_continuous(lim = c(1, 12), breaks = 1:12) +
             scale_y_reverse(lim = c(8, 1), breaks = 1:8, labels = LETTERS[1:8]) +
+            scale_color_solarized("blue") +
             ggtitle("Source Plates Layout")
 ```
 
 Filter out empty wells to generate the output table. Also count how many source plates are actually present. 
 ```{r}
-output <- input[source_flag == "Hit",]
+dt_output_a <- dt_source[user == "Andria",]
+dt_output_p <- dt_source[user == "Pedja",]
+```
 
-n_source <- length(output[,unique(source_rack)])
+Write a function to map 96 to 384 well plates by interleaving dispenses (A1, C1, etc...; B1, D1, etc...).
+```{r}
+generator <- function(x) {
+    dest_pos_final <- NULL
+    for(i in seq(1,384,16)) 
+        {dest_pos_temp <- c(seq(i, i+15, 2), seq(i+1, i+16, 2))
+         dest_pos_final <- c(dest_pos_final, dest_pos_temp)}
+    return(dest_pos_final)
+}
 ```
 
 Assign the destination positions. Only the internal 60 wells (Excluding rows A/H and columns 1/12) are used. 
 ```{r}
-try(if(!(flag %in% c("default", "internal"))) stop("Invalid format flag, set it either to 'default' or 'internal'", call. = FALSE))
+dt_output_a[, `:=`(dest_rack = rep("Andria_dest", each = 384),
+                   dest_pos = generator(),
+                   dest_col = rep(3:24, each = 16), #Start column 
+                   dest_row = c(seq(1, 15, 2), seq(2, 16, 2)))]
 
-if(flag == "default"){
-    output[, `:=`(dest_rack = rep(paste0("Output_Rack_", 1:n_source), each = 96),
-                 dest_pos = 1:96,
-                 dest_col = rep(1:12, each = 8),
-                 dest_row = rep(1:8, 12))]
-    
-    output[, `:=`(dest_well = paste0(LETTERS[dest_row], dest_col))]
-} 
+dt_output_a[, `:=`(dest_well = paste0(LETTERS[dest_row], dest_col))]
 
-if(flag == "internal") {
-    output[, `:=`(dest_rack = rep(paste0("Output_Rack_", 1:(n_source*10)), each = 60),
-                 dest_pos = as.vector(outer((10:15), seq(0, 72, 8), FUN = "+")),
-                 dest_col = rep(2:11, each = 6),
-                 dest_row = rep(2:7, 10))]
-    
-    output[, `:=`(dest_well = paste0(LETTERS[dest_row], dest_col))]
-}
+dt_output_p[, `:=`(dest_rack = rep("Andria_dest", each = 384),
+                   dest_pos = generator(),
+                   dest_col = rep(3:24, each = 16), #Start column 
+                   dest_row = c(seq(1, 15, 2), seq(2, 16, 2)))]
+
+dt_output_p[, `:=`(dest_well = paste0(LETTERS[dest_row], dest_col))]
 ```
 
-Plot the Source plates layout
-```{r}
-output_plot <- ggplot(output, aes(x = dest_col, y = dest_row, label = source_id))
-output_plot + geom_text(size = 1.5) +
-            facet_wrap( ~ dest_rack) +
-            scale_x_continuous(lim = c(1, 12), breaks = 1:12) +
-            scale_y_reverse(lim = c(8, 1), breaks = 1:8, labels = LETTERS[1:8]) +
-            ggtitle("Dest Plates Layout")
+Plot the Dest plates layout
+```{r andriaLayout}
+output_plot_a <- ggplot(dt_output_a, aes(x = dest_col, y = dest_row, label = gene_symbol))
+output_plot_a + geom_text(size = 1.5) +
+            scale_x_continuous(lim = c(1, 24), breaks = 1:24) +
+            scale_y_reverse(lim = c(16, 1), breaks = 1:16, labels = LETTERS[1:16]) +
+            ggtitle("Dest Plates Layout Andria")
+```
+```{r pedjaLayout}
+output_plot_p <- ggplot(dt_output_p, aes(x = dest_col, y = dest_row, label = gene_symbol))
+output_plot_p + geom_text(size = 1.5) +
+            scale_x_continuous(lim = c(1, 24), breaks = 1:24) +
+            scale_y_reverse(lim = c(16, 1), breaks = 1:16, labels = LETTERS[1:16]) +
+            ggtitle("Dest Plates Layout Pedja")
 ```
 
 ```{r}
-write.csv(x = output, 
-          file = "output/Cherry_Pick_Worklist.csv", 
+write.csv(x = dt_output_a, 
+          file = "output/Cherry_Pick_Worklist_Andria.csv", 
+          quote = FALSE, 
+          col.names = TRUE,
+          row.names = FALSE)
+
+write.csv(x = dt_output_p, 
+          file = "output/Cherry_Pick_Worklist_Pedja.csv", 
           quote = FALSE, 
           col.names = TRUE,
           row.names = FALSE)
