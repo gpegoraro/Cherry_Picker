@@ -1,12 +1,12 @@
 ---
 title: "Cherry_Picker"
 author: "Gianluca Pegoraro"
-date: "December, 15 2016"
+date: "April, 25 2016"
 output: html_document
 ---
 ## Aim
 
-This script uses as input a .csv file containing the number and positions of "Positive" wells to be picked from an arbitrary number of 96-well source plates. This table is then rearranged to produce a .csv file containing the well positions for a matched number of 96-well destination plates. The script allows for 2 output formats: `default`- which included the whole 96-wells on the destination plates -, or `internal` - which excludes all the edge wells on the plates. This behavior can be controlled by the `format` flag to be specified at the beginning of the script run. 
+This script uses as input a .csv file containing the number and positions of wells to be picked from an arbitrary number of 96-well source plates. This table is then rearranged to produce a .csv file containing the well positions for a matched number of 96-well destination plates. The script allows for 2 output formats: `default`- which included the whole 96-wells on the destination plates -, or `internal` - which excludes all the edge wells on the plates. This behavior can be controlled by the `format` flag to be specified at the beginning of the script run. 
 
 ```{r loadAndClean}
 library(plyr)
@@ -27,121 +27,143 @@ opts_chunk$set(
     theme_set(theme_minimal())
 ```
 
-Set the import flag. The Flag variable can only take the `default` or `internal` values. Also, set the desired number of source plates for the template file.
+Set the desired number of source plates for the template file. Set the number of desired probe combinations for the template. 
 ```{r inputs}
-flag <- "internal"
-
-n_source <- 20
+n_probes <- 51
+n_combos <- 17
 ```
 
-## Generate a template input file
+## Generate template input files
 
-Generate some template data (Full source plate).
+Generate some template data containing the information about the position of the probes in the Source1 plate and the desired three-way combinations of probes (Green, Red and FarRed).
 ```{r}
-set.seed(161115)
+set.seed(170425)
 
-input_template <-
+n_probes_rack <- (n_probes %/% 96) + 1
+n_combos_rack <- (n_combos %/% 60) + 1
+
+probes_template <-
     data.table(
-    source_rack = rep(paste0("Input_Rack_", 1:n_source), each = 96),
-    source_id =  paste0("ID_", sample(1:10000, 96 * n_source)),
-    source_pos = rep(1:96, n_source),
-    source_col = rep(1:12, each = 8),
-    source_row = rep(1:8, 12),
-    source_flag = sample(
-    c("Hit", "Miss"),
-    96 * n_source,
-    replace = TRUE,
-    prob = c(0.35, 0.65)
-    )
+    probes_rack = rep(paste0("probes_rack_", 1:n_probes_rack), each = 96),
+    probes_id =  paste0("ID_", sample(1:10000, n_probes)),
+    probes_pos = rep(1:96, n_probes_rack),
+    probes_col = rep(1:12, each = 8),
+    probes_row = rep(1:8, 12)
     )
 
-input_template[, `:=`(source_well = paste0(LETTERS[source_row], source_col))]
+probes_template <- probes_template[1:n_probes,]
+
+probes_template[, `:=`(probes_well = paste0(LETTERS[probes_row], probes_col))]
+
+probe_ids <- probes_template[,probes_id]
+
+combos_template <- data.table(combos_rack = rep(paste0("combos_rack_", 
+                                                     1:n_combos_rack), 
+                                              each = 60),
+                             combos_pos = as.vector(outer((10:15), seq(0, 72, 8), FUN = "+")),
+                             combos_col = rep(2:11, each = 6),
+                             combos_row = rep(2:7, 10),
+                             combos_id = paste0("combos_", 1:n_combos),
+                             green_probe = sample(probe_ids, n_combos),
+                             red_probe = sample(probe_ids, n_combos),
+                             farred_probe = sample(probe_ids, n_combos))
+
+combos_template <- combos_template[1:n_combos,]
+
+combos_template[, `:=`(combos_well = paste0(LETTERS[combos_row], combos_col))]
 ```
 
-Randomize empty wells in the Source plates (`Miss`)
+Write the template probe and combos tables to a .csv file.
 ```{r}
-input_template[source_flag == "Miss", source_id := NA]
-```
+write.csv(probes_template,
+          "Probe_template.csv",
+          row.names = FALSE,
+          quote = FALSE)
 
-Write the template table to a .csv file.
-```{r}
-write.csv(input_template,
-          "Input_template.csv",
+write.csv(combos_template,
+          "Combo_template.csv",
           row.names = FALSE,
           quote = FALSE)
 ```
 
-The `Input_template.csv` can be hand modified in excel. Edit the content of single cells as needed, but **Do not modify the number or name of the variables (Columns) in the file**. These are the variables (Columns) in the file that should be present:
+The `Probe_template.csv` and the `Combo_template.csv` can be hand modified in excel. Edit the content of single cells as needed, but **Do not modify the number or name of the variables (Columns) in the file**. These are the variables (Columns) in the file that should be present in the `Probe_template.csv`:
 
-* `source_rack`: The barcode (name) of the source plate | Required 
-* `source_id`: An identifier for a the source well | Optional
-* `source_pos`: A numerical identifier for the well position | Required (**Do not edit**)
-* `source_col`: A numerical identifier for the well column | Required (**Do not edit**)
-* `source_row`: A numerical identifier for the well row | Required (**Do not edit**)
-* `source_well`: A string name for the well position | Required (**Do not edit**)
-* `source_flag`: A flag indicating whether the well should be transferred or not| Required (**Can assume only the `Hit` or `Miss` values)
+* `probes_rack`: The barcode (name) of the probes plate | Required 
+* `probes_id`: An identifier for a the source well | Required
+* `probes_pos`: A numerical identifier for the well position | Required (**Do not edit**)
+* `probes_col`: A numerical identifier for the well column | Required (**Do not edit**)
+* `probes_row`: A numerical identifier for the well row | Required (**Do not edit**)
+* `probes_well`: A string name for the well position | Required (**Do not edit**)
+
+These are the variables (Columns) in the file that should be present in the `Combo_template.csv`:
+
+* `combos_rack`: The barcode (name) of the combos plate | Required 
+* `combos_id`: An identifier for the probe combination | Required
+* `green_probe`: An identifier for the Green probe in the three-way combination | Required 
+* `red_probe`: An identifier for the Red probe in the three-way combination | Required 
+* `farred_probe`: An identifier for the Far Red probe in the three-way combination | Required
+* `comboss_pos`: A numerical identifier for the well position | Required (**Do not edit**)
+* `combos_col`: A numerical identifier for the well column | Required (**Do not edit**)
+* `combos_row`: A numerical identifier for the well row | Required (**Do not edit**)
+* `combos_well`: A string name for the well position | Required (**Do not edit**)
+
+The `green_probe`, `red_probe`, and `farred_probe` identifiers must match at least one of the `probes_id` values ins the `Probe_template.csv` table. 
 
 Once the contents of the files are edited according to your needs, save the file in .csv format with the same name.
 
 ## Read and process the modified input file
 Read the .csv input file. 
 ```{r}
-input <- fread("Input_template.csv")
+probes <- fread("Probe_template.csv")
+combos <- fread("Combo_template.csv")
 ```
 
-Plot the Source plates layout
-```{r, fig.height=12, fig.width= 18}
-input_plot <- ggplot(input, aes(x = source_col, y = source_row, label = source_id))
-input_plot + geom_text(size = 1.5) +
-            facet_wrap( ~ source_rack) +
+Plot the Probes plates layout
+```{r, echo=FALSE}
+probes_plot <- ggplot(probes, aes(x = probes_col, y = probes_row, label = probes_id))
+probes_plot + geom_text(size = 2) +
+            facet_wrap(~ probes_rack) +
             scale_x_continuous(lim = c(1, 12), breaks = 1:12) +
             scale_y_reverse(lim = c(8, 1), breaks = 1:8, labels = LETTERS[1:8]) +
-            ggtitle("Source Plates Layout")
+            ggtitle("Probes Plates Layout")
 ```
-
-Filter out empty wells to generate the output table. Also count how many source plates are actually present. 
-```{r}
-output <- input[source_flag == "Hit",]
-
-n_source <- length(output[,unique(source_rack)])
-```
-
-Assign the destination positions. Only the internal 60 wells (Excluding rows A/H and columns 1/12) are used. 
-```{r}
-try(if(!(flag %in% c("default", "internal"))) stop("Invalid format flag, set it either to 'default' or 'internal'", call. = FALSE))
-
-if(flag == "default"){
-    output[, `:=`(dest_rack = rep(paste0("Output_Rack_", 1:n_source), each = 96),
-                 dest_pos = 1:96,
-                 dest_col = rep(1:12, each = 8),
-                 dest_row = rep(1:8, 12))]
-    
-    output[, `:=`(dest_well = paste0(LETTERS[dest_row], dest_col))]
-} 
-
-if(flag == "internal") {
-    output[, `:=`(dest_rack = rep(paste0("Output_Rack_", 1:(n_source*10)), each = 60),
-                 dest_pos = as.vector(outer((10:15), seq(0, 72, 8), FUN = "+")),
-                 dest_col = rep(2:11, each = 6),
-                 dest_row = rep(2:7, 10))]
-    
-    output[, `:=`(dest_well = paste0(LETTERS[dest_row], dest_col))]
-}
-```
-
-Plot the Source plates layout
-```{r}
-output_plot <- ggplot(output, aes(x = dest_col, y = dest_row, label = source_id))
-output_plot + geom_text(size = 1.5) +
-            facet_wrap( ~ dest_rack) +
+Plot the Combos plates layout
+```{r, echo=FALSE}
+combos_plot <- ggplot(combos, aes(x = combos_col, y = combos_row, label = combos_id))
+combos_plot + geom_text(size = 2) +
+            facet_wrap(~ combos_rack) +
             scale_x_continuous(lim = c(1, 12), breaks = 1:12) +
             scale_y_reverse(lim = c(8, 1), breaks = 1:8, labels = LETTERS[1:8]) +
-            ggtitle("Dest Plates Layout")
+            ggtitle("Combos Plates Layout")
+```
+
+Rearrange the combo table. 
+```{r}
+combos_melt <- melt.data.table(data = combos, 
+                           id.vars = c("combos_rack",
+                                       "combos_col",
+                                       "combos_row",
+                                       "combos_well",
+                                       "combos_id"), 
+                           measure.vars = c("green_probe",
+                                            "red_probe",
+                                            "farred_probe"),
+                           variable.name = "probes_color",
+                           value.name = "probes_id")
 ```
 
 ```{r}
-write.csv(x = output, 
-          file = "output/Cherry_Pick_Worklist.csv", 
+setkey(probes, probes_id)
+setkey(combos_melt, probes_id)
+
+worklist <- combos_melt[probes, nomatch = 0]
+```
+
+
+Write the Worklist to a .csv file.
+```{r}
+write.csv(x = worklist, 
+          file = "output/Combo_Worklist.csv", 
           quote = FALSE, 
           col.names = TRUE,
           row.names = FALSE)
