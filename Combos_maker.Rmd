@@ -6,7 +6,7 @@ output: html_document
 ---
 ## Aim
 
-This script uses as input a .csv file containing the number and positions of wells to be picked from an arbitrary number of 96-well source plates. This table is then rearranged to produce a .csv file containing the well positions for a matched number of 96-well destination plates. The script allows for 2 output formats: `default`- which included the whole 96-wells on the destination plates -, or `internal` - which excludes all the edge wells on the plates. This behavior can be controlled by the `format` flag to be specified at the beginning of the script run. 
+This script uses as 2 .csv files containing the number, positions, and identities of FISH probes (Green, Red, Blue) to be picked from an arbitrary number of 96-well source plates. The probes are dispensed in a 96-well plate containing 3-way combinations. The scripts outputs a .csv file containing the dispense operations for the Janus.  
 
 ```{r loadAndClean}
 library(plyr)
@@ -60,7 +60,7 @@ probe_ids <- probes_template[,probes_id]
 combos_template <- data.table(combos_rack = rep(paste0("combos_rack_", 
                                                      1:n_combos_rack), 
                                               each = 60),
-                             combos_pos = as.vector(outer((10:15), seq(0, 72, 8), FUN = "+")),
+                             combos_pos = as.vector(outer((10:15), seq(0, 72, 8), FUN = "+")), # Only inner wells (60)
                              combos_col = rep(2:11, each = 6),
                              combos_row = rep(2:7, 10),
                              combos_id = paste0("combos_", 1:n_combos),
